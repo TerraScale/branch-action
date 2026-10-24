@@ -40,7 +40,7 @@ jobs:
         run: |
           ts migrate up "$DATABASE"
           ts migrate diff "$DATABASE"
-          ts sql "$DATABASE" 'SELECT name FROM users LIMIT 10'
+          ts exec "$DATABASE" 'SELECT name FROM users LIMIT 10'
 ```
 
 Pull request 42 gets the database `pr-42`, a copy of `app` with its
