@@ -23,4 +23,4 @@ jobs:
         run: |
           ts migrate up "$DATABASE"
           ts migrate diff "$DATABASE"
-          ts sql "$DATABASE" 'SELECT name FROM users LIMIT 10'
+          ts exec "$DATABASE" 'SELECT name FROM users LIMIT 10'
