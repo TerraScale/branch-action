@@ -1,0 +1,26 @@
+name: Preview database
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+concurrency: preview-database-${{ github.event.pull_request.number }}
+
+jobs:
+  branch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - id: db
+        uses: TerraScale/branch-action@v1
+        with:
+          api-key: ${{ secrets.TERRASCALE_API_KEY }}
+          database: app
+      - name: Migrate and test against the branch
+        if: github.event.action != 'closed'
+        env:
+          TERRASCALE_API_KEY: ${{ secrets.TERRASCALE_API_KEY }}
+          DATABASE: ${{ steps.db.outputs.name }}
+        run: |
+          ts migrate up "$DATABASE"
+          ts migrate diff "$DATABASE"
+          ts sql "$DATABASE" 'SELECT name FROM users LIMIT 10'

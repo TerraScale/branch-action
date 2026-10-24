@@ -1,0 +1,2 @@
+-- audit log
+CREATE TABLE audit (id INTEGER PRIMARY KEY, msg TEXT NOT NULL);
