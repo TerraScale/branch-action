@@ -13,8 +13,8 @@ inputs:
     description: Database to branch, such as app.
     required: true
   branch:
-    description: Name of the branch database, ^[a-z][a-z0-9_-]{0,62}$.
-    default: pr-${{ github.event.pull_request.number }}
+    description: Namespace label, ^[a-z][a-z0-9_-]{0,62}$. The actual name also binds repository ID and PR number.
+    default: preview
   command:
     description: >-
       create keeps an existing branch, reset branches the database again,
@@ -57,4 +57,5 @@ runs:
         COMMAND: ${{ inputs.command }}
         PROJECT: ${{ inputs.project }}
         EVENT_ACTION: ${{ github.event.action }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
       run: '"$GITHUB_ACTION_PATH/branch.sh"'
