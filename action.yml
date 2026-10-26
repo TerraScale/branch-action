@@ -17,8 +17,9 @@ inputs:
     default: preview
   command:
     description: >-
-      create keeps an existing branch, reset branches the database again,
-      delete removes the branch. Empty means delete when the pull request
+      create keeps the base preview, reset creates a new generation and retains
+      previous databases, delete conditionally removes verified previews in this namespace.
+      Empty means delete when the pull request
       closed and create otherwise.
     default: ""
   project:

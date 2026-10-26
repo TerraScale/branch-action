@@ -10,8 +10,7 @@ verb=${COMMAND:-create}
 if [ -z "$verb" ]; then verb=create; fi
 if [ -z "$COMMAND" ] && [ "$EVENT_ACTION" = closed ]; then verb=delete; fi
 case $verb in
-  create | delete) ;;
-  reset) fail 'Reset requires the generation refresh contract.' ;;
+  create | reset | delete) ;;
   *) fail 'command must be create, reset or delete.' ;;
 esac
 [[ $DATABASE =~ ^[a-z][a-z0-9_-]{0,62}$ ]] || fail 'database must be a valid database name.'
@@ -44,8 +43,14 @@ jq -e --arg project "$project" 'all(.[]; .projectId == $project)' <<< "$list" >/
 if [ -n "$PROJECT" ]; then [[ $PROJECT = "$project" ]] || fail 'Project identity mismatch.'; fi
 # Each source identity gets its own repository/PR/label namespace.
 digest=$(printf '%s\n' "$project:$source_id:$GITHUB_REPOSITORY_ID:$PR_NUMBER:$label" | openssl dgst -sha256 | awk '{print substr($NF,1,24)}')
-name="pr-$PR_NUMBER-$digest"
-[[ $name != "$DATABASE" ]] || fail 'Source and target must be different databases.'
+base_name="pr-$PR_NUMBER-$digest"
+name=$base_name
+if [ "$verb" = reset ]; then
+  [[ ${GITHUB_RUN_ID:-} =~ ^[1-9][0-9]{0,19}$ && ${GITHUB_RUN_ATTEMPT:-} =~ ^[1-9][0-9]{0,19}$ ]] || fail 'Reset requires a GitHub run ID and attempt.'
+  name="g-$digest-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
+  [ "${#name}" -le 63 ] || fail 'Generation identity exceeds the database name limit.'
+fi
+[[ $base_name != "$DATABASE" && $name != "$DATABASE" ]] || fail 'Source and target must be different databases.'
 check_source() {
   local current
   current=$(cli db info "$DATABASE")
@@ -60,24 +65,40 @@ check_target() {
     fail 'Target identity or source lineage mismatch; refusing operation.'
   fi
 }
-target=$(select_name "$name")
-check_source
-if [ "$target" != null ]; then
-  check_target "$target"
-  observed_id=$(jq -r .id <<< "$target")
-  target=$(cli db info "$name")
-  check_target "$target"
-  [[ $(jq -r .id <<< "$target") = "$observed_id" ]] || fail 'Target identity changed; refusing operation.'
-fi
-if [ "$verb" = delete ]; then
+resolve_target() {
+  target=$(select_name "$name")
+  check_source
   if [ "$target" != null ]; then
+    check_target "$target"
+    observed_id=$(jq -r .id <<< "$target")
+    target=$(cli db info "$name")
+    check_target "$target"
+    [[ $(jq -r .id <<< "$target") = "$observed_id" ]] || fail 'Target identity changed; refusing operation.'
+  fi
+}
+if [ "$verb" = delete ]; then
+  # Preflight every observed member before any deletion; never sweep arbitrary prefixes.
+  names=$(jq -r --arg base "$base_name" --arg digest "$digest" '.[] | select(.name == $base or (.name | test("^g-" + $digest + "-r[1-9][0-9]{0,19}-a[1-9][0-9]{0,19}$"))) | .name' <<< "$list")
+  cleanup_names=()
+  cleanup_ids=()
+  cleanup_count=0
+  check_source
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    resolve_target
+    cleanup_names[cleanup_count]=$name
+    cleanup_ids[cleanup_count]=$observed_id
+    cleanup_count=$((cleanup_count + 1))
+  done <<< "$names"
+  for ((i=0; i<cleanup_count; i++)); do
     check_source
     # The server must enforce this immutable ID, including across concurrent replacements.
-    cli -yes -expected-id "$observed_id" db delete "$name" >/dev/null
-  fi
-  echo "name=$name" >> "$GITHUB_OUTPUT"
+    cli -yes -expected-id "${cleanup_ids[$i]}" db delete "${cleanup_names[$i]}" >/dev/null
+  done
+  echo "name=$base_name" >> "$GITHUB_OUTPUT"
   exit 0
 fi
+resolve_target
 if [ "$target" = null ]; then
   target=$(cli -expected-id "$source_id" db branch "$DATABASE" "$name")
   check_target "$target"
