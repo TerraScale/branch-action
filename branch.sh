@@ -2,6 +2,7 @@
 # All API operations go through ts; never delete by name without expected-id.
 set -euo pipefail
 fail() { echo "::error::$1" >&2; exit 1; }
+[ -n "${TERRASCALE_API_KEY:-}" ] || fail 'A TerraScale API key is required.'
 ts=("$HOME/.local/bin/ts" --json)
 if [ -n "$PROJECT" ]; then ts+=(-project "$PROJECT"); fi
 cli() { "${ts[@]}" "$@" 2>/dev/null || fail 'CLI request failed; inspect permissions and resource state before retrying.'; }
@@ -20,7 +21,7 @@ label=${BRANCH:-preview}
 jq -e --arg repo "$GITHUB_REPOSITORY_ID" --arg pr "$PR_NUMBER" \
   '(.pull_request.base.repo.id | tostring) == $repo and (.number | tostring) == $pr' "$GITHUB_EVENT_PATH" >/dev/null || fail 'Repository or PR event identity mismatch.'
 # Explicit labels also stay inside this namespace; source identity is checked separately.
-digest=$(printf '%s\n' "$GITHUB_REPOSITORY_ID:$PR_NUMBER:$label" | shasum -a 256 | cut -c1-24)
+digest=$(printf '%s\n' "$GITHUB_REPOSITORY_ID:$PR_NUMBER:$label" | openssl dgst -sha256 | awk '{print substr($NF,1,24)}')
 name="pr-$PR_NUMBER-$digest"
 [[ $name != "$DATABASE" ]] || fail 'Source and target must be different databases.'
 select_name() {
@@ -41,12 +42,16 @@ if [ -n "$PROJECT" ]; then [[ $PROJECT = "$project" ]] || fail 'Project identity
 check_source() {
   local current
   current=$(cli db info "$DATABASE")
-  valid_info "$DATABASE" "$current" && \
-    jq -e --arg id "$source_id" --arg project "$project" '.id == $id and .projectId == $project' <<< "$current" >/dev/null || fail 'Source identity changed; refusing operation.'
+  if ! valid_info "$DATABASE" "$current" ||
+    ! jq -e --arg id "$source_id" --arg project "$project" '.id == $id and .projectId == $project' <<< "$current" >/dev/null; then
+    fail 'Source identity changed; refusing operation.'
+  fi
 }
 check_target() {
-  valid_info "$name" "$1" && \
-    jq -e --arg source "$source_id" --arg project "$project" '.id != $source and .projectId == $project and .branchedFrom == $source' <<< "$1" >/dev/null || fail 'Target identity or source lineage mismatch; refusing operation.'
+  if ! valid_info "$name" "$1" ||
+    ! jq -e --arg source "$source_id" --arg project "$project" '.id != $source and .projectId == $project and .branchedFrom == $source' <<< "$1" >/dev/null; then
+    fail 'Target identity or source lineage mismatch; refusing operation.'
+  fi
 }
 target=$(select_name "$name")
 check_source

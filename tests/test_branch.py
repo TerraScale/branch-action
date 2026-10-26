@@ -45,6 +45,12 @@ def fake_cli():
         result, status = None, 0
         if command == "list":
             result = list(rows.values())
+            if mode == "list-error":
+                status = 1
+            if mode == "duplicate-source":
+                result.append(rows["app"])
+            if mode == "wrong-list-type":
+                result = {"items": result}
         elif command == "info":
             result = rows[args[2]].copy()
             if mode == "source-race" and args[2] == "app":
@@ -69,7 +75,7 @@ def fake_cli():
         file.seek(0)
         json.dump(state, file)
         file.truncate()
-    print(json.dumps(result))
+    print("not-json" if command == "list" and mode == "malformed-list" else json.dumps(result))
     sys.exit(status)
 
 
@@ -86,6 +92,7 @@ class Provenance(unittest.TestCase):
         event = self.directory / "event.json"
         event.write_text(json.dumps(dict(number=42, pull_request=dict(base=dict(repo=dict(id=123))))))
         self.env = dict(os.environ, HOME=str(self.directory), PROJECT=PROJECT, DATABASE="app",
+                        TERRASCALE_API_KEY="fixture-only",
                         BRANCH="", COMMAND="", EVENT_ACTION="opened", PR_NUMBER="42",
                         GITHUB_EVENT_NAME="pull_request", GITHUB_REPOSITORY_ID="123",
                         GITHUB_EVENT_PATH=str(event), FIXTURE_STATE=str(self.state))
@@ -158,6 +165,15 @@ class Provenance(unittest.TestCase):
     def test_wrong_event_fails_before_cli(self):
         self.assertNotEqual(self.run_action(PR_NUMBER="43")[0], 0)
         self.assertEqual(self.read()["calls"], [])
+        self.assertNotEqual(self.run_action(TERRASCALE_API_KEY="")[0], 0)
+        self.assertEqual(self.read()["calls"], [])
+
+    def test_failed_malformed_and_ambiguous_inventory_never_mutates(self):
+        for mode in ("list-error", "malformed-list", "wrong-list-type", "duplicate-source"):
+            with self.subTest(mode=mode):
+                self.write([database("app"), database(namespace(), TARGET, SOURCE)], mode)
+                self.assertNotEqual(self.run_action(EVENT_ACTION="closed")[0], 0)
+                self.assert_no_mutation()
 
     def test_concurrent_close_never_deletes_source(self):
         self.write([database("app"), database(namespace(), TARGET, SOURCE)])
