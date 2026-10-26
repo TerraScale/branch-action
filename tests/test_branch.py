@@ -19,8 +19,8 @@ def database(name, identity=SOURCE, parent=None):
     return dict(name=name, id=identity, projectId=PROJECT, branchedFrom=parent)
 
 
-def namespace(repo="123", label="preview"):
-    digest = hashlib.sha256(f"{repo}:42:{label}\n".encode()).hexdigest()[:24]
+def namespace(repo="123", label="preview", source=SOURCE):
+    digest = hashlib.sha256(f"{PROJECT}:{source}:{repo}:42:{label}\n".encode()).hexdigest()[:24]
     return f"pr-42-{digest}"
 
 
@@ -51,6 +51,12 @@ def fake_cli():
                 result.append(rows["app"])
             if mode == "wrong-list-type":
                 result = {"items": result}
+            if mode == "duplicate-id":
+                result.append(database("unrelated", SOURCE))
+            if mode == "cross-project":
+                result.append(database("unrelated", OTHER) | {"projectId": OTHER})
+            if mode == "malformed-unrelated":
+                result.append(database("unrelated", "invalid"))
         elif command == "info":
             result = rows[args[2]].copy()
             if mode == "source-race" and args[2] == "app":
@@ -58,10 +64,14 @@ def fake_cli():
             if mode == "target-race" and args[2] != "app":
                 result["id"] = OTHER
         elif command == "branch":
-            if args[3] in rows:
+            if mode == "branch-source-race":
+                rows[args[2]] = database(args[2], OTHER)
+            if expected != rows[args[2]]["id"] or args[3] in rows:
                 status = 1
             else:
-                result = database(args[3], TARGET, rows[args[2]]["id"])
+                identity = TARGET if not state.get("serial") else "01ARZ3NDEKTSV4RRFFQ69G5FB0"
+                state["serial"] = state.get("serial", 0) + 1
+                result = database(args[3], identity, rows[args[2]]["id"])
                 rows[args[3]] = result
         elif command == "delete":
             if mode == "delete-race":
@@ -76,6 +86,8 @@ def fake_cli():
         json.dump(state, file)
         file.truncate()
     print("not-json" if command == "list" and mode == "malformed-list" else json.dumps(result))
+    if command == "list" and mode == "multiple-roots":
+        print("[]")
     sys.exit(status)
 
 
@@ -169,11 +181,22 @@ class Provenance(unittest.TestCase):
         self.assertEqual(self.read()["calls"], [])
 
     def test_failed_malformed_and_ambiguous_inventory_never_mutates(self):
-        for mode in ("list-error", "malformed-list", "wrong-list-type", "duplicate-source"):
+        for mode in ("list-error", "malformed-list", "wrong-list-type", "duplicate-source",
+                     "duplicate-id", "cross-project", "malformed-unrelated", "multiple-roots"):
             with self.subTest(mode=mode):
                 self.write([database("app"), database(namespace(), TARGET, SOURCE)], mode)
                 self.assertNotEqual(self.run_action(EVENT_ACTION="closed")[0], 0)
                 self.assert_no_mutation()
+
+    def test_distinct_sources_and_source_replacement_during_copy(self):
+        self.write([database("app"), database("other", OTHER)])
+        self.assertEqual(self.run_action()[0], 0)
+        self.assertIn(f"name={namespace(source=OTHER)}", self.run_action(DATABASE="other")[1])
+        self.assertIn(namespace(), self.read()["rows"])
+        self.write([database("app")], "branch-source-race")
+        self.assertNotEqual(self.run_action()[0], 0)
+        self.assertEqual(list(self.read()["rows"]), ["app"])
+        self.assertEqual(self.read()["calls"][-1][-1], SOURCE)
 
     def test_concurrent_close_never_deletes_source(self):
         self.write([database("app"), database(namespace(), TARGET, SOURCE)])

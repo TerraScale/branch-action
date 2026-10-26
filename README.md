@@ -76,8 +76,8 @@ Use the outputs with any TerraScale SDK, for example as
 ## Identity and cleanup contract
 
 Only `pull_request` events are accepted. The action checks the event's base repository
-ID and PR number against GitHub's runner identity. The name hashes repository ID,
-PR number and label; it never adopts an unnamespaced label. Existing previews must
+ID and PR number against GitHub's runner identity. The name hashes project/source ULIDs,
+repository ID, PR number and label; it never adopts an unnamespaced label. Existing previews must
 have a different canonical ULID from the source, the same project, and `branchedFrom`
 equal to the currently resolved source ULID. A changed source or mismatched target
 fails without deleting anything. Old `pr-<number>` databases are never adopted.
@@ -87,10 +87,14 @@ Reuse rechecks identity and lineage. Cleanup sends `-expected-id` and requires t
 server's dedicated conditional-delete route; an unsupported route, changed ID or
 permission failure fails the step without an unconditional-delete fallback. A name
 precheck alone would not protect against concurrent replacement. Serialize workflows
-per repository/PR so a close event cannot overlap a new create event.
+per repository/PR so a close event cannot overlap a new create event. Without that
+serialization a later create can survive an earlier close inventory; the API does
+not provide a durable closed-PR fence.
 
 Publication prerequisite: replace the current CLI 0.0.4 install pin with the released
-CLI providing stable `--json` and `-expected-id`. The latter must use
+CLI providing stable `--json` and `-expected-id`. Branch creation must use
+`POST /v1/projects/{project}/databases/{name}/branches/if-id/{sourceId}` so a replaced
+source cannot be copied between lookup and mutation. Cleanup must use
 `DELETE /v1/projects/{project}/databases/{name}/if-id/{expectedId}`, returning failure
 on older servers. Until both are deployed, cleanup fails safely. Offline fixtures:
 `nice -n 19 python3 -m unittest discover -s tests -v`.

@@ -20,25 +20,32 @@ label=${BRANCH:-preview}
 [[ $GITHUB_EVENT_NAME = pull_request && $GITHUB_REPOSITORY_ID =~ ^[1-9][0-9]{0,19}$ && $PR_NUMBER =~ ^[1-9][0-9]{0,19}$ ]] || fail 'A pull_request event with repository ID and PR number is required.'
 jq -e --arg repo "$GITHUB_REPOSITORY_ID" --arg pr "$PR_NUMBER" \
   '(.pull_request.base.repo.id | tostring) == $repo and (.number | tostring) == $pr' "$GITHUB_EVENT_PATH" >/dev/null || fail 'Repository or PR event identity mismatch.'
-# Explicit labels also stay inside this namespace; source identity is checked separately.
-digest=$(printf '%s\n' "$GITHUB_REPOSITORY_ID:$PR_NUMBER:$label" | openssl dgst -sha256 | awk '{print substr($NF,1,24)}')
-name="pr-$PR_NUMBER-$digest"
-[[ $name != "$DATABASE" ]] || fail 'Source and target must be different databases.'
 select_name() {
   jq -c --arg name "$1" 'map(select(.name == $name)) | if length == 1 then .[0] elif length == 0 then null else error("duplicate name") end' <<< "$list"
 }
 valid_info() {
-  jq -e --arg name "$1" '
+  jq -es --arg name "$1" '
     def id: type == "string" and test("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
-    type == "object" and .name == $name and (.id | id) and (.projectId | id)' <<< "$2" >/dev/null
+    length == 1 and (.[0] | type == "object" and .name == $name and (.id | id) and (.projectId | id))' <<< "$2" >/dev/null
 }
 list=$(cli db list)
-jq -e 'type == "array"' <<< "$list" >/dev/null || fail 'Invalid database list JSON.'
+jq -es '
+  def id: type == "string" and test("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
+  length == 1 and (.[0] | type == "array" and
+    all(.[]; type == "object" and (.name | type == "string" and test("^[a-z][a-z0-9_-]{0,62}$")) and
+      (.id | id) and (.projectId | id) and (.branchedFrom == null or (.branchedFrom | id))) and
+    ([.[].name] | length == (unique | length)) and ([.[].id] | length == (unique | length)))
+' <<< "$list" >/dev/null || fail 'Invalid or ambiguous database inventory.'
 source=$(select_name "$DATABASE")
 valid_info "$DATABASE" "$source" || fail 'Source database is absent or invalid.'
 source_id=$(jq -r .id <<< "$source")
 project=$(jq -r .projectId <<< "$source")
+jq -e --arg project "$project" 'all(.[]; .projectId == $project)' <<< "$list" >/dev/null || fail 'Inventory project identity mismatch.'
 if [ -n "$PROJECT" ]; then [[ $PROJECT = "$project" ]] || fail 'Project identity mismatch.'; fi
+# Each source identity gets its own repository/PR/label namespace.
+digest=$(printf '%s\n' "$project:$source_id:$GITHUB_REPOSITORY_ID:$PR_NUMBER:$label" | openssl dgst -sha256 | awk '{print substr($NF,1,24)}')
+name="pr-$PR_NUMBER-$digest"
+[[ $name != "$DATABASE" ]] || fail 'Source and target must be different databases.'
 check_source() {
   local current
   current=$(cli db info "$DATABASE")
@@ -72,7 +79,7 @@ if [ "$verb" = delete ]; then
   exit 0
 fi
 if [ "$target" = null ]; then
-  target=$(cli db branch "$DATABASE" "$name")
+  target=$(cli -expected-id "$source_id" db branch "$DATABASE" "$name")
   check_target "$target"
 fi
 id=$(jq -r .id <<< "$target")
