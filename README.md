@@ -43,10 +43,10 @@ jobs:
           ts exec "$DATABASE" 'SELECT name FROM users LIMIT 10'
 ```
 
-Pull request 42 gets the database `pr-42`, a copy of `app` with its
+Pull request 42 gets a database named `pr-42-<namespace hash>`, a copy of `app` with its
 documents, collections and SQL tables. New pushes keep the branch and its
-data; set `command: reset` to branch `app` again on every push. Closing or
-merging the pull request deletes `pr-42`.
+data. Closing or merging the pull request deletes only the verified preview identity.
+Reset is temporarily refused until the generation refresh contract is installed.
 
 After the job, `ts migrate up app` on the main branch applies the same
 migrations to `app`.
@@ -57,8 +57,8 @@ migrations to `app`.
 | --- | --- | --- |
 | `api-key` | yes | API key with `databases:read` and `databases:write`. `ts keys create` keys have both. |
 | `database` | yes | Database to branch. |
-| `branch` | no | Branch name, by default `pr-<number>`. Must match `^[a-z][a-z0-9_-]{0,62}$`. |
-| `command` | no | `create` keeps an existing branch, `reset` branches again, `delete` removes it. Empty deletes when the pull request closed and creates otherwise. |
+| `branch` | no | Namespace label, default `preview`. Must match `^[a-z][a-z0-9_-]{0,62}$`. Even explicit labels receive the repository/PR namespace. |
+| `command` | no | `create` keeps a verified branch, `delete` conditionally removes it. Empty deletes when the pull request closed and creates otherwise. `reset` is temporarily refused. |
 | `project` | no | Project id; only organization API keys need it. |
 
 ## Outputs
@@ -72,6 +72,32 @@ migrations to `app`.
 
 Use the outputs with any TerraScale SDK, for example as
 `TERRASCALE_PROJECT_ID` and the database name of a preview deploy.
+
+## Identity and cleanup contract
+
+Only `pull_request` events are accepted. The action checks the event's base repository
+ID and PR number against GitHub's runner identity. The name hashes project/source ULIDs,
+repository ID, PR number and label; it never adopts an unnamespaced label. Existing previews must
+have a different canonical ULID from the source, the same project, and `branchedFrom`
+equal to the currently resolved source ULID. A changed source or mismatched target
+fails without deleting anything. Old `pr-<number>` databases are never adopted.
+
+Concurrent creation can fail with a name conflict; retry after checking the workflow.
+Reuse rechecks identity and lineage. Cleanup sends `-expected-id` and requires the
+server's dedicated conditional-delete route; an unsupported route, changed ID or
+permission failure fails the step without an unconditional-delete fallback. A name
+precheck alone would not protect against concurrent replacement. Serialize workflows
+per repository/PR so a close event cannot overlap a new create event. Without that
+serialization a later create can survive an earlier close inventory; the API does
+not provide a durable closed-PR fence.
+
+Publication prerequisite: replace the current CLI 0.0.4 install pin with the released
+CLI providing stable `--json` and `-expected-id`. Branch creation must use
+`POST /v1/projects/{project}/databases/{name}/branches/if-id/{sourceId}` so a replaced
+source cannot be copied between lookup and mutation. Cleanup must use
+`DELETE /v1/projects/{project}/databases/{name}/if-id/{expectedId}`, returning failure
+on older servers. Until both are deployed, cleanup fails safely. Offline fixtures:
+`nice -n 19 python3 -m unittest discover -s tests -v`.
 
 ## License
 
