@@ -9,14 +9,10 @@ permissions:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Preview identity contract fixtures
-        run: python3 -m unittest discover -s tests -v
-      - name: shellcheck
-        run: shellcheck branch.sh
-      - name: actionlint
-        run: |
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
-          ./actionlint -color .github/workflows/*.yml examples/*.yml
+    uses: TerraScale/.github/.github/workflows/command.yml@3a54c0184eacdc45466c1123bca67a99db62e91c
+    with:
+      command: |
+        python3 -m unittest discover -s tests -v
+        shellcheck branch.sh
+        bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+        ./actionlint -color .github/workflows/*.yml examples/*.yml
