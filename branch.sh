@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # All API operations go through ts; never delete by name without expected-id.
 set -euo pipefail
+umask 077
 fail() { echo "::error::$1" >&2; exit 1; }
 [ -n "${TERRASCALE_API_KEY:-}" ] || fail 'A TerraScale API key is required.'
 ts=("$HOME/.local/bin/ts" --json)
-if [ -n "$PROJECT" ]; then ts+=(-project "$PROJECT"); fi
+if [ -n "${PROJECT:-}" ]; then ts+=(-project "$PROJECT"); fi
 cli() { "${ts[@]}" "$@" 2>/dev/null || fail 'CLI request failed; inspect permissions and resource state before retrying.'; }
 verb=${COMMAND:-create}
 if [ -z "$verb" ]; then verb=create; fi
-if [ -z "$COMMAND" ] && [ "$EVENT_ACTION" = closed ]; then verb=delete; fi
+if [ -z "${COMMAND:-}" ] && [ "${EVENT_ACTION:-}" = closed ]; then verb=delete; fi
 case $verb in
   create | reset | delete) ;;
   *) fail 'command must be create, reset or delete.' ;;
@@ -93,14 +94,14 @@ if [ "$verb" = delete ]; then
   for ((i=0; i<cleanup_count; i++)); do
     check_source
     # The server must enforce this immutable ID, including across concurrent replacements.
-    cli -yes -expected-id "${cleanup_ids[$i]}" db delete "${cleanup_names[$i]}" >/dev/null
+    cli -yes -expected-id "${cleanup_ids[$i]}" db branch delete "${cleanup_names[$i]}" >/dev/null
   done
   echo "name=$base_name" >> "$GITHUB_OUTPUT"
   exit 0
 fi
 resolve_target
 if [ "$target" = null ]; then
-  target=$(cli -expected-id "$source_id" db branch "$DATABASE" "$name")
+  target=$(cli -expected-id "$source_id" db branch create "$name" --from "$DATABASE" --ttl "${TTL:-7d}")
   check_target "$target"
 fi
 id=$(jq -r .id <<< "$target")
@@ -108,9 +109,17 @@ check_source
 confirmed=$(cli db info "$name")
 check_target "$confirmed"
 [[ $(jq -r .id <<< "$confirmed") = "$id" ]] || fail 'Target identity changed before publication.'
+connection=$(cli -expected-id "$id" db branch url "$name")
+connection_url=$(jq -er 'select(.connectionUrl | type == "string" and startswith("postgresql://")) | .connectionUrl' <<< "$connection") || fail 'Invalid branch connection URL.'
+# Register both forms before any following step can print them.
+echo "::add-mask::$connection_url"
+secret=${connection_url#postgresql://any:}
+secret=${secret%%@*}
+echo "::add-mask::$secret"
 {
   echo "name=$name"
   echo "id=$id"
   echo "project-id=$project"
   echo "api-url=https://api.terrascale.tech/v1/projects/$project/databases/$name"
+  echo "connection-url=$connection_url"
 } >> "$GITHUB_OUTPUT"

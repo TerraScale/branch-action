@@ -5,14 +5,15 @@ branches the database when the pull request opens, hands the branch to later
 steps (migrations, tests, preview deploys) and deletes it when the pull
 request closes.
 
-It runs the [ts CLI](https://github.com/TerraScale/ts-go) on GitHub-hosted
+It runs the [ts CLI](https://github.com/TerraScale/terrascale/tree/main/sdk/go) on GitHub-hosted
 Linux and macOS runners and acts as a TerraScale API key.
 
 > [!IMPORTANT]
 > **Unreleased — publication hold.** This README describes the safety contract in
 > this source branch. The current `v1` release does not provide this contract,
 > including source identity guards, conditional cleanup and reset generations.
-> The `@v1` example below refers to that existing release, not these safeguards.
+> The `@main` example below uses source; pin a full commit SHA for your workflow.
+> Source builds a pinned monorepo CLI, without publishing a CLI or action release.
 > Keep the existing `v1` tag unchanged. Do not publish this source until the required
 > CLI and guarded server routes are released and verified. Update the example to
 > `@v2` only after that release exists.
@@ -29,6 +30,9 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, closed]
 
+permissions:
+  contents: read
+
 concurrency: preview-database-${{ github.event.pull_request.number }}
 
 jobs:
@@ -37,25 +41,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - id: db
-        uses: TerraScale/branch-action@v1
+        uses: TerraScale/branch-action@main
         with:
           api-key: ${{ secrets.TERRASCALE_API_KEY }}
           database: app
       - name: Migrate and test against the branch
         if: github.event.action != 'closed'
         env:
-          TERRASCALE_API_KEY: ${{ secrets.TERRASCALE_API_KEY }}
-          DATABASE: ${{ steps.db.outputs.name }}
+          DATABASE_URL: ${{ steps.db.outputs.connection-url }}
         run: |
-          ts migrate up "$DATABASE"
-          ts migrate diff "$DATABASE"
-          ts exec "$DATABASE" 'SELECT name FROM users LIMIT 10'
+          PGDATABASE="$DATABASE_URL" psql -c 'SELECT 1'
 ```
 
 Pull request 42 gets a database named `pr-42-<namespace hash>`, a copy of `app` with its
-documents, collections and SQL tables. New pushes keep the branch and its
+SQL tables. New pushes keep the branch and its
 data. Closing or merging the pull request conditionally deletes this namespace's
-verified previews, including reset generations.
+verified previews, including reset generations. New branches expire after seven days by default.
 
 After the job, `ts migrate up app` on the main branch applies the same
 migrations to `app`.
@@ -64,10 +65,11 @@ migrations to `app`.
 
 | Input | Required | Description |
 | --- | --- | --- |
-| `api-key` | yes | API key with `databases:read` and `databases:write`. `ts keys create` keys have both. |
+| `api-key` | yes | API key with `databases:read`, `databases:write`, `documents:read` and `documents:write`. `ts keys create` keys have both. |
 | `database` | yes | Database to branch. |
 | `branch` | no | Namespace label, default `preview`. Must match `^[a-z][a-z0-9_-]{0,62}$`. Even explicit labels receive the repository/PR namespace. |
 | `command` | no | `create` keeps the base preview, `reset` creates a fresh generation and retains previous databases, `delete` conditionally removes verified previews. Empty deletes when the pull request closed and creates otherwise. |
+| `ttl` | no | Lifetime on creation, default `7d`; whole seconds from `60s` to `365d`. Reuse does not extend expiry. |
 | `project` | no | Project id; only organization API keys need it. |
 
 ## Outputs
@@ -77,7 +79,12 @@ migrations to `app`.
 | `name` | Branch database name. |
 | `id` | Branch database id. Empty after delete. |
 | `project-id` | Project id. Empty after delete. |
+| `connection-url` | Secret Postgres URL with a database-scoped read/write key. Expires within seven days or with the branch. Empty after delete. |
 | `api-url` | `https://api.terrascale.tech/v1/projects/<project>/databases/<name>`. Empty after delete. |
+
+The action masks both the scoped key and connection URL before publishing outputs. Keep
+`connection-url` in step environments and never print it. Each create/reuse/reset issues
+a fresh key; it grants no access to the source. Expired previews must be deleted and recreated.
 
 Use the outputs with any TerraScale SDK, for example as
 `TERRASCALE_PROJECT_ID` and the database name of a preview deploy.
@@ -131,8 +138,10 @@ or close cleanup. There is no rollback deletion of an unconfirmed copy. Offline
 fixtures prove the action preserves old records and sends guarded commands; live
 credential, data-copy and descendant behavior still requires own-resource verification.
 
-Publication hold: do not tag or publish this action with the current CLI 0.0.4 pin.
-Replace it with the released CLI providing stable `--json` and `-expected-id`.
+Publication hold: keep the released `v1` tag unchanged. Source builds the CLI from
+the full monorepo revision pinned in `action.yml`, with `--json`, guarded branch
+commands, TTL and scoped-key issuance. Tagging a new action release remains a
+separate go-live step.
 Branch creation must use
 `POST /v1/projects/{project}/databases/{name}/branches/if-id/{sourceId}` so a replaced
 source cannot be copied between lookup and mutation. Cleanup must use

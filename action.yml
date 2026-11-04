@@ -7,7 +7,7 @@ branding:
 
 inputs:
   api-key:
-    description: TerraScale API key with databases:read and databases:write in the project. Pass it from a secret.
+    description: TerraScale API key with database and document read/write scopes in the project. Pass it from a secret.
     required: true
   database:
     description: Database to branch, such as app.
@@ -22,11 +22,17 @@ inputs:
       Empty means delete when the pull request
       closed and create otherwise.
     default: ""
+  ttl:
+    description: Branch lifetime on creation, from 60s to 365d. Existing previews keep their expiry.
+    default: 7d
   project:
     description: Project id. Only an organization API key needs it; a project key acts in its own project.
     default: ""
 
 outputs:
+  connection-url:
+    description: Secret Postgres URL with a read/write key scoped to the branch; empty after delete. Expires within seven days or with the branch.
+    value: ${{ steps.branch.outputs.connection-url }}
   name:
     description: Branch database name.
     value: ${{ steps.branch.outputs.name }}
@@ -43,10 +49,25 @@ outputs:
 runs:
   using: composite
   steps:
+    - uses: actions/setup-go@v6
+      with:
+        go-version: '1.27.3'
+        cache: false
     - name: Install ts
       shell: bash
       run: |
-        curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/TerraScale/ts-go/v0.0.4/scripts/install.sh | sh -s 0.0.4
+        set -euo pipefail
+        revision=905c818cbdc36955bab3a7717f9ebbf7a7da082b
+        work=$(mktemp -d)
+        trap 'rm -rf "$work"' EXIT
+        git -C "$work" init --quiet
+        git -C "$work" remote add origin https://github.com/TerraScale/terrascale.git
+        git -C "$work" sparse-checkout set sdk/go
+        git -C "$work" fetch --quiet --depth=1 --filter=blob:none origin "$revision"
+        git -C "$work" checkout --quiet --detach FETCH_HEAD
+        mkdir -p "$HOME/.local/bin"
+        cd "$work/sdk/go"
+        go build -mod=readonly -trimpath -o "$HOME/.local/bin/ts" ./cmd/ts
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
     - id: branch
       name: Branch the database
@@ -57,6 +78,7 @@ runs:
         BRANCH: ${{ inputs.branch }}
         COMMAND: ${{ inputs.command }}
         PROJECT: ${{ inputs.project }}
+        TTL: ${{ inputs.ttl }}
         EVENT_ACTION: ${{ github.event.action }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
       run: '"$GITHUB_ACTION_PATH/branch.sh"'

@@ -38,6 +38,15 @@ def fake_cli():
             expected = value
         else:
             assert flag == "-project" and value == PROJECT
+    ttl = None
+    if args[:2] == ["db", "branch"] and args[2] in ("create", "delete", "url"):
+        operation = args[2]
+        if operation == "create":
+            assert args[4] == "--from" and args[6] == "--ttl"
+            ttl = args[7]
+            args = ["db", "branch", args[5], args[3]]
+        else:
+            args = ["db", operation, args[3]]
     with open(os.environ["FIXTURE_STATE"], "r+") as file:
         fcntl.flock(file, fcntl.LOCK_EX)
         state = json.load(file)
@@ -68,7 +77,13 @@ def fake_cli():
                 result["id"] = OTHER
             if mode == "confirm-fail" and args[2].startswith("g-"):
                 status = 1
+        elif command == "url":
+            if mode == "scoped-key-denied" or expected != rows[args[2]]["id"]:
+                status = 1
+            else:
+                result = {"connectionUrl": f"postgresql://any:fixture-scoped@pg.terrascale.tech:5432/{PROJECT}/{rows[args[2]]['id']}?sslmode=verify-full&sslrootcert=system"}
         elif command == "branch":
+            state["ttl"] = ttl
             if mode == "branch-source-race":
                 rows[args[2]] = database(args[2], OTHER)
             if expected != rows[args[2]]["id"] or args[3] in rows or mode in ("quota", "old-branch-server-404"):
@@ -141,11 +156,22 @@ class Provenance(unittest.TestCase):
         self.assertFalse(any(call[1] in ("delete", "branch") for call in self.read()["calls"]))
 
     def test_create_reuse_close_and_absent_close(self):
-        self.assertEqual(self.run_action()[0], 0)
+        status, output = self.run_action()
+        self.assertEqual(status, 0)
+        self.assertIn("connection-url=postgresql://any:fixture-scoped@", output)
+        self.assertEqual(self.read()["ttl"], "7d")
         self.assertIn(f"id={TARGET}", self.run_action()[1])
         self.assertEqual(self.run_action(EVENT_ACTION="closed")[0], 0)
         self.assertNotIn(namespace(), self.read()["rows"])
         self.assertEqual(self.run_action(EVENT_ACTION="closed")[0], 0)
+
+    def test_scoped_key_failure_publishes_no_credentials_or_success(self):
+        self.write([database("app")], "scoped-key-denied")
+        status, output = self.run_action()
+        self.assertNotEqual(status, 0)
+        self.assertEqual(output, "")
+        self.assertIn(namespace(), self.read()["rows"])
+        self.assertEqual(self.read()["ttl"], "7d")
 
     def test_source_target_wrong_parent_project_and_changed_source(self):
         for changes, mode in [({"id": SOURCE}, ""), ({"branchedFrom": None}, ""),

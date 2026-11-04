@@ -5,6 +5,9 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, closed]
 
+permissions:
+  contents: read
+
 concurrency: preview-database-${{ github.event.pull_request.number }}
 
 jobs:
@@ -13,16 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - id: db
-        uses: TerraScale/branch-action@v1
+        uses: TerraScale/branch-action@main
         with:
           api-key: ${{ secrets.TERRASCALE_API_KEY }}
           database: app
       - name: Migrate and test against the branch
         if: github.event.action != 'closed'
         env:
-          TERRASCALE_API_KEY: ${{ secrets.TERRASCALE_API_KEY }}
-          DATABASE: ${{ steps.db.outputs.name }}
+          DATABASE_URL: ${{ steps.db.outputs.connection-url }}
         run: |
-          ts migrate up "$DATABASE"
-          ts migrate diff "$DATABASE"
-          ts exec "$DATABASE" 'SELECT name FROM users LIMIT 10'
+          PGDATABASE="$DATABASE_URL" psql -c 'SELECT 1'
