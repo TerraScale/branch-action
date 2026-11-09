@@ -57,7 +57,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        revision=905c818cbdc36955bab3a7717f9ebbf7a7da082b
+        revision=a5cf8b1d97a730ee5c3cc18ddc751e37a21f1adf  # tag sdk/go/v0.0.27
         work=$(mktemp -d)
         trap 'rm -rf "$work"' EXIT
         git -C "$work" init --quiet

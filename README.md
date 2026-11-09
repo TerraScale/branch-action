@@ -139,7 +139,7 @@ fixtures prove the action preserves old records and sends guarded commands; live
 credential, data-copy and descendant behavior still requires own-resource verification.
 
 Publication hold: keep the released `v1` tag unchanged. Source builds the CLI from
-the full monorepo revision pinned in `action.yml`, with `--json`, guarded branch
+the full monorepo revision pinned in `action.yml` (release tag `sdk/go/v0.0.27`), with `--json`, guarded branch
 commands, TTL and scoped-key issuance. Tagging a new action release remains a
 separate go-live step.
 Branch creation must use
