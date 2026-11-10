@@ -6,7 +6,7 @@ fail() { echo "::error::$1" >&2; exit 1; }
 [ -n "${TERRASCALE_API_KEY:-}" ] || fail 'A TerraScale API key is required.'
 ts=("$HOME/.local/bin/ts" --json)
 if [ -n "${PROJECT:-}" ]; then ts+=(-project "$PROJECT"); fi
-cli() { "${ts[@]}" "$@" 2>/dev/null || fail 'CLI request failed; inspect permissions and resource state before retrying.'; }
+cli() { "${ts[@]}" $@ 2>/dev/null || fail 'CLI request failed; inspect permissions and resource state before retrying.'; }
 verb=${COMMAND:-create}
 if [ -z "$verb" ]; then verb=create; fi
 if [ -z "${COMMAND:-}" ] && [ "${EVENT_ACTION:-}" = closed ]; then verb=delete; fi
