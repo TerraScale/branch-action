@@ -148,7 +148,3 @@ source cannot be copied between lookup and mutation. Cleanup must use
 `DELETE /v1/projects/{project}/databases/{name}/if-id/{expectedId}`, returning failure
 on older servers. Until both are deployed, cleanup fails safely. Offline fixtures:
 `nice -n 19 python3 -m unittest discover -s tests -v`.
-
-## License
-
-Apache-2.0
