@@ -7,14 +7,29 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  lint:
-    uses: TerraScale/.github/.github/workflows/command.yml@3a54c0184eacdc45466c1123bca67a99db62e91c
-    with:
-      command: |
-        python3 -m unittest discover -s tests -v
-        shellcheck branch.sh
-        curl -fsSLO https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
-        echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  actionlint_1.7.7_linux_amd64.tar.gz" | sha256sum -c -
-        tar -xzf actionlint_1.7.7_linux_amd64.tar.gz actionlint
-        ./actionlint -color .github/workflows/*.yml examples/*.yml
+  all-green:
+    name: all-green
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Lint branch.sh
+        run: shellcheck branch.sh
+      - name: Download and verify pinned actionlint
+        run: |
+          archive="$RUNNER_TEMP/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --retry 2 \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$archive"
+          printf '%s  %s\n' '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' "$archive" \
+            | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+      - name: Lint workflows
+        run: '"$RUNNER_TEMP/actionlint" -color .github/workflows/*.yml examples/*.yml'

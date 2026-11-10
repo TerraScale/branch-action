@@ -134,9 +134,8 @@ If copying fails, quota is exhausted, access is revoked, confirmation fails, out
 writing fails or the run is cancelled, reset leaves all previous databases intact.
 Their use remains subject to existing access. A completed or uncertain copy may
 remain without outputs; inspect its deterministic name and retry the same run/attempt
-or close cleanup. There is no rollback deletion of an unconfirmed copy. Offline
-fixtures prove the action preserves old records and sends guarded commands; live
-credential, data-copy and descendant behavior still requires own-resource verification.
+or close cleanup. There is no rollback deletion of an unconfirmed copy. Live
+credential, data-copy and descendant behavior requires own-resource verification.
 
 Publication hold: keep the released `v1` tag unchanged. Source builds the CLI from
 the full monorepo revision pinned in `action.yml` (release tag `sdk/go/v0.0.27`), with `--json`, guarded branch
@@ -146,5 +145,4 @@ Branch creation must use
 `POST /v1/projects/{project}/databases/{name}/branches/if-id/{sourceId}` so a replaced
 source cannot be copied between lookup and mutation. Cleanup must use
 `DELETE /v1/projects/{project}/databases/{name}/if-id/{expectedId}`, returning failure
-on older servers. Until both are deployed, cleanup fails safely. Offline fixtures:
-`nice -n 19 python3 -m unittest discover -s tests -v`.
+on older servers. Until both are deployed, cleanup fails safely.
