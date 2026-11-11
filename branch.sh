@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# All API operations go through ts; never delete by name without expected-id.
 set -euo pipefail
 umask 077
 fail() { echo "::error::$1" >&2; exit 1; }
@@ -42,7 +41,6 @@ source_id=$(jq -r .id <<< "$source")
 project=$(jq -r .projectId <<< "$source")
 jq -e --arg project "$project" 'all(.[]; .projectId == $project)' <<< "$list" >/dev/null || fail 'Inventory project identity mismatch.'
 if [ -n "$PROJECT" ]; then [[ $PROJECT = "$project" ]] || fail 'Project identity mismatch.'; fi
-# Each source identity gets its own repository/PR/label namespace.
 digest=$(printf '%s\n' "$project:$source_id:$GITHUB_REPOSITORY_ID:$PR_NUMBER:$label" | openssl dgst -sha256 | awk '{print substr($NF,1,24)}')
 base_name="pr-$PR_NUMBER-$digest"
 name=$base_name
@@ -78,7 +76,6 @@ resolve_target() {
   fi
 }
 if [ "$verb" = delete ]; then
-  # Preflight every observed member before any deletion; never sweep arbitrary prefixes.
   names=$(jq -r --arg base "$base_name" --arg digest "$digest" '.[] | select(.name == $base or (.name | test("^g-" + $digest + "-r[1-9][0-9]{0,19}-a[1-9][0-9]{0,19}$"))) | .name' <<< "$list")
   cleanup_names=()
   cleanup_ids=()
@@ -93,7 +90,6 @@ if [ "$verb" = delete ]; then
   done <<< "$names"
   for ((i=0; i<cleanup_count; i++)); do
     check_source
-    # The server must enforce this immutable ID, including across concurrent replacements.
     cli -yes -expected-id "${cleanup_ids[$i]}" db branch delete "${cleanup_names[$i]}" >/dev/null
   done
   echo "name=$base_name" >> "$GITHUB_OUTPUT"
@@ -111,7 +107,6 @@ check_target "$confirmed"
 [[ $(jq -r .id <<< "$confirmed") = "$id" ]] || fail 'Target identity changed before publication.'
 connection=$(cli -expected-id "$id" db branch url "$name")
 connection_url=$(jq -er 'select(.connectionUrl | type == "string" and startswith("postgresql://")) | .connectionUrl' <<< "$connection") || fail 'Invalid branch connection URL.'
-# Register both forms before any following step can print them.
 echo "::add-mask::$connection_url"
 secret=${connection_url#postgresql://any:}
 secret=${secret%%@*}

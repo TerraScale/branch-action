@@ -20,8 +20,12 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - name: Lint branch.sh
-        run: shellcheck branch.sh
+      - name: Lint scripts
+        run: shellcheck branch.sh install-ts.sh
+      - name: Install the pinned ts release
+        run: ./install-ts.sh
+      - name: README workflow equals examples/preview-database.yml
+        run: awk '/^```yaml$/{f=1;next} /^```$/{f=0} f' README.md | diff - examples/preview-database.yml
       - name: Download and verify pinned actionlint
         run: |
           archive="$RUNNER_TEMP/actionlint_1.7.12_linux_amd64.tar.gz"

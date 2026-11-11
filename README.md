@@ -13,7 +13,8 @@ Linux and macOS runners and acts as a TerraScale API key.
 > this source branch. The current `v1` release does not provide this contract,
 > including source identity guards, conditional cleanup and reset generations.
 > The `@main` example below uses source; pin a full commit SHA for your workflow.
-> Source builds a pinned monorepo CLI, without publishing a CLI or action release.
+> Source installs the released `ts` CLI pinned in `install-ts.sh` and refuses the
+> download unless its SHA-256 matches the pin; it installs no Go and builds nothing.
 > Keep the existing `v1` tag unchanged. Do not publish this source until the required
 > CLI and guarded server routes are released and verified. Update the example to
 > `@v2` only after that release exists.
@@ -39,7 +40,7 @@ jobs:
   branch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - id: db
         uses: TerraScale/branch-action@main
         with:
@@ -50,7 +51,7 @@ jobs:
         env:
           DATABASE_URL: ${{ steps.db.outputs.connection-url }}
         run: |
-          PGDATABASE="$DATABASE_URL" psql -c 'SELECT 1'
+          psql "$DATABASE_URL" -c 'SELECT 1'
 ```
 
 Pull request 42 gets a database named `pr-42-<namespace hash>`, a copy of `app` with its
@@ -65,7 +66,7 @@ migrations to `app`.
 
 | Input | Required | Description |
 | --- | --- | --- |
-| `api-key` | yes | API key with `databases:read`, `databases:write`, `documents:read` and `documents:write`. `ts keys create` keys have both. |
+| `api-key` | yes | API key with `databases:read`, `databases:write`, `sql:read` and `sql:write`. `ts keys create` keys have all four unless made with `-scope read`. |
 | `database` | yes | Database to branch. |
 | `branch` | no | Namespace label, default `preview`. Must match `^[a-z][a-z0-9_-]{0,62}$`. Even explicit labels receive the repository/PR namespace. |
 | `command` | no | `create` keeps the base preview, `reset` creates a fresh generation and retains previous databases, `delete` conditionally removes verified previews. Empty deletes when the pull request closed and creates otherwise. |
@@ -137,10 +138,10 @@ remain without outputs; inspect its deterministic name and retry the same run/at
 or close cleanup. There is no rollback deletion of an unconfirmed copy. Live
 credential, data-copy and descendant behavior requires own-resource verification.
 
-Publication hold: keep the released `v1` tag unchanged. Source builds the CLI from
-the full monorepo revision pinned in `action.yml` (release tag `sdk/go/v0.0.27`), with `--json`, guarded branch
-commands, TTL and scoped-key issuance. Tagging a new action release remains a
-separate go-live step.
+Publication hold: keep the released `v1` tag unchanged. Source installs the `ts`
+release pinned in `install-ts.sh`, one archive and SHA-256 per runner OS and
+architecture, with `--json`, guarded branch commands, TTL and scoped-key issuance.
+Tagging a new action release remains a separate go-live step.
 Branch creation must use
 `POST /v1/projects/{project}/databases/{name}/branches/if-id/{sourceId}` so a replaced
 source cannot be copied between lookup and mutation. Cleanup must use
