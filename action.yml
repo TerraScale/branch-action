@@ -49,26 +49,9 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@v6
-      with:
-        go-version: '1.27.4'
-        cache: false
     - name: Install ts
       shell: bash
-      run: |
-        set -euo pipefail
-        revision=a5cf8b1d97a730ee5c3cc18ddc751e37a21f1adf  # tag sdk/go/v0.0.27
-        work=$(mktemp -d)
-        trap 'rm -rf "$work"' EXIT
-        git -C "$work" init --quiet
-        git -C "$work" remote add origin https://github.com/TerraScale/terrascale.git
-        git -C "$work" sparse-checkout set sdk/go
-        git -C "$work" fetch --quiet --depth=1 --filter=blob:none origin "$revision"
-        git -C "$work" checkout --quiet --detach FETCH_HEAD
-        mkdir -p "$HOME/.local/bin"
-        cd "$work/sdk/go"
-        go build -mod=readonly -trimpath -o "$HOME/.local/bin/ts" ./cmd/ts
-        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      run: '"$GITHUB_ACTION_PATH/install-ts.sh"'
     - id: branch
       name: Branch the database
       shell: bash
