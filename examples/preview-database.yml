@@ -1,5 +1,3 @@
-# Copy to .github/workflows/preview-database.yml and add the repository
-# secret TERRASCALE_API_KEY (ts keys create ci prints one).
 name: Preview database
 on:
   pull_request:
@@ -14,7 +12,7 @@ jobs:
   branch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - id: db
         uses: TerraScale/branch-action@main
         with:
@@ -25,4 +23,4 @@ jobs:
         env:
           DATABASE_URL: ${{ steps.db.outputs.connection-url }}
         run: |
-          PGDATABASE="$DATABASE_URL" psql -c 'SELECT 1'
+          psql "$DATABASE_URL" -c 'SELECT 1'

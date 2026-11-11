@@ -42,8 +42,9 @@ GitHub action that gives each pull request its own copy of a TerraScale database
 
 ## Layout and checks
 
-- `action.yml` is the action interface; `branch.sh` runs the create, reset and delete commands through `ts`; `examples/` holds workflow examples.
-- Checks: `shellcheck branch.sh` and actionlint over `.github/workflows/*.yml` and `examples/*.yml`. No tests in this repo.
+- `action.yml` is the action interface; `install-ts.sh` installs the released `ts` CLI: it downloads the release archive for the runner's OS and architecture, refuses it unless its SHA-256 matches the pin, checks `ts --version` and adds `~/.local/bin` to the path; `branch.sh` runs the create, reset and delete commands through `ts`; `examples/` holds workflow examples.
+- A CLI update changes only `install-ts.sh`: the version and the four archive hashes, copied from that release's `checksums.txt` after checking them against your own download.
+- Checks (`ci.yml`, job `all-green`): shellcheck on `branch.sh` and `install-ts.sh`, `install-ts.sh` on the Linux runner, the README's workflow block equal to `examples/preview-database.yml`, and actionlint over `.github/workflows/*.yml` and `examples/*.yml`. No tests in this repo.
 
 ## Rules
 
