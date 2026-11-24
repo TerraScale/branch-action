@@ -12,7 +12,7 @@ Linux and macOS runners and acts as a TerraScale API key.
 > **Unreleased — publication hold.** This README describes the safety contract in
 > this source branch. The current `v1` release does not provide this contract,
 > including source identity guards, conditional cleanup and reset generations.
-> The `@main` example below uses source; pin a full commit SHA for your workflow.
+> The example below pins the unreleased action source to a full commit SHA.
 > Source installs the released `ts` CLI pinned in `install-ts.sh` and refuses the
 > download unless its SHA-256 matches the pin; it installs no Go and builds nothing.
 > Keep the existing `v1` tag unchanged. Do not publish this source until the required
@@ -42,7 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - id: db
-        uses: TerraScale/branch-action@main
+        uses: TerraScale/branch-action@97cb98375e0c9c4881be520432799b6ffbae6884
         with:
           api-key: ${{ secrets.TERRASCALE_API_KEY }}
           database: app
